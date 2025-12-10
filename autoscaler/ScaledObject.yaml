@@ -92,7 +92,7 @@ spec:
       
       # 4. Umbral (Threshold)
       # Escala cuando la consulta es > 95. Esto ocurre cuando tomcat_sessions_active_current_sessions es <= 4.
-      threshold: "2" 
+      threshold: "1" 
       
       # 5. Cooldown: 
       # Tiempo para esperar antes de reducir la escala una vez que la métrica ha bajado
