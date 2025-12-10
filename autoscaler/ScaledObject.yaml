@@ -1,0 +1,104 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keda-prometheus-sa
+  namespace: openshift-devspaces
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: kedasa-token
+  namespace: openshift-devspaces
+  annotations:
+    kubernetes.io/service-account.name: keda-prometheus-sa 
+type: kubernetes.io/service-account-token
+---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: ClusterRole
+# metadata:
+#   name: keda-prometheus-reader
+# rules:
+# - apiGroups: [""]
+#   resources: ["services"]
+#   verbs: ["get"]
+# - apiGroups: ["monitoring.coreos.com"]
+#   resources: ["prometheuses"]
+#   verbs: ["get"]
+# - apiGroups: [""]
+#   resources: ["pods/portforward"]
+#   verbs: ["create"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kedasa-cluster-monitoring-view
+subjects:
+  - kind: ServiceAccount
+    name: keda-prometheus-sa
+    namespace: openshift-devspaces
+roleRef:
+  kind: ClusterRole
+  name: cluster-monitoring-view # El ClusterRole que se está asignando
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-trigger-auth-prometheus
+  namespace: openshift-devspaces
+spec:
+  secretTargetRef:
+  - parameter: bearerToken
+    name: kedasa-token
+    key: token
+  - parameter: ca
+    name: kedasa-token
+    key: ca.crt
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: mi-app-escalador-inverso
+  namespace: openshift-devspaces
+spec:
+  # Referencia al objeto que KEDA debe escalar
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mi-nuevo-servicio # <--- ¡IMPORTANTE! Reemplaza con el nombre de tu Deployment
+  
+  # Configuración del escalado
+  minReplicaCount: 0  # Mínimo de réplicas
+  maxReplicaCount: 2 # Máximo de réplicas
+  pollingInterval: 30 # KEDA comprueba la métrica cada 30 segundos
+  
+  # Gatillo basado en Prometheus (métricas externas)
+  triggers:
+  - type: prometheus
+    metadata:
+      # 1. Endpoint de Prometheus
+      # serverAddress: https://prometheus-k8s-openshift-monitoring.apps-crc.testing
+      serverAddress: https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9091
+      
+      # 2. Nombre de la métrica para KEDA
+      metricName: sesiones_inversas
+      
+      # 3. Consulta PromQL INVERSA: 
+      # Cuando las sesiones activas (M) son bajas (ej: 5), el resultado es alto (100 - 5 = 95)
+      # Cuando las sesiones activas (M) son altas (ej: 20), el resultado es bajo (100 - 20 = 80)
+      query: '2-(count(kube_pod_labels{label_controller_devfile_io_creator!=""}) or on() vector(0))'
+      
+      # 4. Umbral (Threshold)
+      # Escala cuando la consulta es > 95. Esto ocurre cuando tomcat_sessions_active_current_sessions es <= 4.
+      threshold: "2" 
+      
+      # 5. Cooldown: 
+      # Tiempo para esperar antes de reducir la escala una vez que la métrica ha bajado
+      cooldownPeriod: "30"
+      authModes: "bearer"
+    authenticationRef:
+      name: keda-trigger-auth-prometheus
+      kind: TriggerAuthentication
+

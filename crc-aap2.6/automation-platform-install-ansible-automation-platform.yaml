@@ -1,0 +1,73 @@
+---
+apiVersion: v1
+data:
+  password: YWRtaW4=
+kind: Secret
+metadata:
+  labels:
+    app.kubernetes.io/component: aap
+    app.kubernetes.io/name: example
+    app.kubernetes.io/operator-version: ""
+    app.kubernetes.io/part-of: example
+  name: example-admin-password
+  namespace: ansible-automation-platform
+---
+
+apiVersion: aap.ansible.com/v1alpha1
+kind: AnsibleAutomationPlatform
+metadata:
+  name: example
+  namespace: ansible-automation-platform
+spec:
+  admin_password_secret: example-admin-password
+  route_tls_termination_mechanism: Edge
+  # no_log: true
+  redis_mode: standalone
+  api:
+    log_level: INFO
+    replicas: 1
+  extra_settings:
+    - setting: REDIRECT_IS_HTTPS
+      value: '"True"'
+  database:
+    postgres_data_volume_init: false
+    resource_requirements:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+    storage_requirements:
+      requests:
+        storage: 100Gi
+  # Platform
+  image_pull_policy: IfNotPresent
+  # Components
+  controller:
+    disabled: false
+  eda:
+    worker:
+      replicas: 1
+    scheduler:
+      replicas: 1
+    disabled: true
+  hub:
+    worker:
+      replicas: 1
+    web:
+      replicas: 1
+    content:
+      replicas: 1
+    disabled: false
+    ## Modify to contain your RWM storage class name
+    storage_type: file
+    file_storage_storage_class: crc-csi-hostpath-provisioner
+    file_storage_size: 10Gi
+
+    ## uncomment if using S3 storage for Content pod
+    # storage_type: S3
+    # object_storage_s3_secret: example-galaxy-object-storage
+
+    ## uncomment if using Azure storage for Content pod
+    # storage_type: azure
+    # object_storage_azure_secret: azure-secret-name
+  lightspeed:
+    disabled: true

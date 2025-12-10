@@ -1,0 +1,175 @@
+---
+# Título: Playbook para crear un nuevo repositorio, su webhook y notificar
+# Ejecutable desde AAP/AWX
+- name: Crear nuevo repositorio, webhook y notificar
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    crc_url_api_client: "https://api.crc.testing:6443"
+    crc_user: "kubeadmin"
+    crc_validate_certs: false
+    gitea_username: "lab-user"
+    gitea_password: "lab-user"
+    gitea_validate_certs: false
+
+    awx_host: example-ansible-automation-platform.apps-crc.testing
+    awx_user: admin
+    awx_password: admin
+
+    token_user: "devops_user"
+    token_scope: "write"
+
+    ca_filename: crc-router-ca.crt
+    configmap_name: gitea-custom-ca
+
+  tasks:
+
+    - name: 
+      shell: "oc login -u {{crc_user}} {{crc_url_api_client}}"
+
+    - name: 
+      shell: oc whoami --show-token
+      register: token
+
+    - name: Install AAP Operator
+      kubernetes.core.k8s:
+        state: present
+        host: "{{ crc_url_api_client }}"
+        api_key: "{{ token.stdout }}"
+        validate_certs: "{{crc_validate_certs}}"
+        src: automation-platform-install-operator.yaml
+      register: step
+      until: step.result.results| json_query('[?result.status.currentCSV]| [0].result.status.currentCSV') is defined and (step.result.results | json_query('[?result.status.currentCSV] | [0].result.status.currentCSV')) is not none
+      retries: "10"
+      delay: "15"
+
+    - name: Report Operator Status
+      ansible.builtin.debug:
+        msg: "{{step.result.results| json_query('[?result.status.currentCSV]| [0].result.status.currentCSV')}}"
+
+    - name: Get ClusterServiceVersion (CSV) status
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{step.result.results| json_query('[?result.status.currentCSV]| [0].result.status.currentCSV')}}"
+        namespace: "ansible-automation-platform"
+      register: csv_status_check
+      until: csv_status_check.resources| json_query('[?status.phase]| [0].status.phase') == "Succeeded"
+      retries: "10"
+      delay: "15"
+
+    - name: Report Operator Status
+      ansible.builtin.debug:
+        msg: "{{csv_status_check.resources| json_query('[?status.phase]| [0].status.phase')}}"
+        
+    - name: Install DevSpaces Operator
+      kubernetes.core.k8s:
+        state: present
+        host: "{{ crc_url_api_client }}"
+        api_key: "{{ token.stdout }}"
+        validate_certs: "{{crc_validate_certs}}"
+        src: "../devspaces/devspace.yaml"
+      register: step2
+      until: step2.result.results| json_query('[?result.status.currentCSV]| [0].result.status.currentCSV') is defined and (step2.result.results | json_query('[?result.status.currentCSV] | [0].result.status.currentCSV')) is not none
+      retries: "10"
+      delay: "15"
+
+    - name: Report Operator Status
+      ansible.builtin.debug:
+        msg: "{{step2.result.results| json_query('[?result.status.currentCSV]| [0].result.status.currentCSV')}}"
+
+    - name: Get ClusterServiceVersion (CSV) status
+      kubernetes.core.k8s_info:
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{step2.result.results| json_query('[?result.status.currentCSV]| [0].result.status.currentCSV')}}"
+        namespace: "devspace"
+      register: csv_status_check
+      until: csv_status_check.resources| json_query('[?status.phase]| [0].status.phase') == "Succeeded"
+      retries: "10"
+      delay: "15"
+
+    - name: Install AAP Instance
+      kubernetes.core.k8s:
+        state: present
+        host: "{{ crc_url_api_client }}"
+        api_key: "{{ token.stdout }}"
+        validate_certs: "{{crc_validate_certs}}"
+        src: automation-platform-install-ansible-automation-platform.yaml
+      register: step3
+      
+    - name: ✅ Wait for the URL to be available (HTTP 200)
+      ansible.builtin.uri:
+        url: "https://example-ansible-automation-platform.apps-crc.testing/api/controller/v2/config/"
+        method: GET
+        status_code: 401 # The desired HTTP status code
+        validate_certs: false # Set to true if using proper SSL/TLS certificates
+      register: app_status_check
+      until: app_status_check.status == 401
+      retries: "45"
+      delay: "15"
+      delegate_to: localhost
+
+    - name: "Get the Authentication Token for the future requests"
+      ansible.builtin.uri:
+        url: "https://{{ awx_host }}/api/gateway/v1/tokens/"
+        user: "{{ awx_user }}"
+        password: "{{ awx_password }}"
+        method: POST
+        force_basic_auth: true
+        validate_certs: false
+        status_code: 201
+      register: authtoken_res
+
+    - name: "Set the oauth token to be used since now"
+      ansible.builtin.set_fact:
+        aap_token: "{{ authtoken_res.json.token }}"
+        aap_oauthtoken_url: "{{ authtoken_res.json.url }}"
+
+    - name: Set the license using a file
+      ansible.controller.license:
+        manifest: "/home/adelahoz/JCCM/manifest_AAP2.5_20251030T211523Z.zip"
+        controller_host: "{{ awx_host }}"
+        aap_token: "{{ aap_token }}"
+        # controller_username: "{{ awx_user }}"
+        # controller_password: "{{ awx_password }}"
+        validate_certs: false
+      register: app_status_check
+      until: app_status_check  is succeeded
+      retries: "15"
+      delay: "15"
+      delegate_to: localhost
+
+    - name: "Delete the Authentication Token used"
+      ansible.builtin.uri:
+        url: "https://{{ awx_host }}{{aap_oauthtoken_url }}"
+        user: "{{ awx_user }}"
+        password: "{{ awx_password }}"
+        method: DELETE
+        force_basic_auth: true
+        validate_certs: false
+        status_code: 204
+      when: aap_oauthtoken_url is defined
+
+    - name: Install Devspaces Instance
+      kubernetes.core.k8s:
+        state: present
+        host: "{{ crc_url_api_client }}"
+        api_key: "{{ token.stdout }}"
+        validate_certs: "{{crc_validate_certs}}"
+        src: ../devspaces/devspaces-instance.yaml
+      register: step6
+      
+    - name: ✅ Wait for the URL to be available (HTTP 200)
+      ansible.builtin.uri:
+        url: "https://devspaces.apps-crc.testing/"
+        method: GET
+        status_code: 200 # The desired HTTP status code
+        validate_certs: false # Set to true if using proper SSL/TLS certificates
+      register: app_status_check
+      until: app_status_check.status == 200
+      retries: "45"
+      delay: "15"
+      delegate_to: localhost

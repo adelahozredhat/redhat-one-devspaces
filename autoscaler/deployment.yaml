@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mi-nuevo-servicio
+  labels:
+    app: helloworld-openshift-safe
+  namespace: openshift-devspaces
+spec:
+  # El nombre DEBE coincidir con el scaleTargetRef de tu ScaledObject.
+  # (Ya utilizamos 'mi-nuevo-servicio' en el ejemplo anterior)
+  replicas: 0 
+  selector:
+    matchLabels:
+      app: helloworld-openshift-safe
+  template:
+    metadata:
+      labels:
+        app: helloworld-openshift-safe
+    spec:
+      containers:
+      - name: helloworld-safe-container
+        # Imagen de Red Hat diseñada para entornos con restricciones de seguridad (SCC/UID arbitrario)
+        image: openshift/hello-openshift
+        ports:
+        - containerPort: 8080 # Esta imagen expone el puerto 8080 por defecto
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
