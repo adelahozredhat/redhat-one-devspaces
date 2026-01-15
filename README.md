@@ -59,7 +59,7 @@ For demonstration and testing purposes, all resources are deployed in the `opens
 
 ## Prerequisites
 
-- **OpenShift Local (CRC)**: This example has been tested with the latest version of OpenShift Local (CodeReady Containers). Ensure you have CRC installed and running.
+- **OpenShift Local (CRC)**: This example has been tested with the latest version of OpenShift Local (CodeReady Containers). Ensure you have CRC installed and running. (It is required enable-cluster-monitoring in CRC)
 
 - **Cluster Admin Access**: Most of the setup commands require cluster administrator privileges.
 
