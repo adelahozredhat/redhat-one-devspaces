@@ -87,19 +87,15 @@ roleRef:
   kind: Role
   name: prometheus-k8s
 ---
-# ConfigMap que contiene el JSON del dashboard de Grafana
+# ConfigMap with Che Server JVMGrafana Dashboard configuration using a JSON structure
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboard-devspaces-server
   namespace: openshift-config-managed
   labels:
-    console.openshift.io/dashboard: "true" # Etiqueta aplicada directamente en la metadata
+    console.openshift.io/dashboard: "true" # Tagging as dashboard
 data:
-  # El contenido del dashboard.json debe ser obtenido y codificado aquí.
-  # El comando 'oc create configmap --from-literal' lo hace automáticamente
-  # pero en YAML debemos insertarlo.
-  # Usaremos un placeholder para el contenido real.
   devspaces-server-dashboard.json: |
     {
       "annotations": {
